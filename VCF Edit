@@ -1,0 +1,55 @@
+import io
+import re
+import pandas as pd
+import gzip
+
+
+
+# Setting up input and output file location
+vcf_in_path = "../data/~_cod_ex.genome.vcf"
+vcf_out_path = "../data/~_cod_ex.genome_output.vcf"
+
+
+# Function to read VCF file by using python file lib
+# This will read file line by line and produce as list
+# Excluding any header text contains ##
+# Regex will help to eliminate new line or extra space in VCF file
+def read_vcf(path):
+    with open(path, 'r') as f:
+        lines = [re.sub('^[ \t]+|[ \t]+$', '', l) for l in f if not l.startswith('##')]
+
+    return pd.read_csv(
+        io.StringIO(''.join(lines)),
+        dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
+               'QUAL': str, 'FILTER': str, 'INFO': str, 'FORMAT': str, 'NA12878': str},
+        sep='\t'
+    )
+
+
+# Main function to normalize the DF created on top of VCF data set
+# Using PANDAS to read and apply all the transformation as per teh requirement
+# Reading DF to VCF file by using pandas
+def normalize_vcf(vcf_in: str, vcf_out: str):
+    vcf_df = read_vcf(vcf_in)
+    vcf_by_filter = vcf_df[vcf_df["FILTER"].isin(["PASS", "LowGQX"])]
+    vcf_by_info = vcf_by_filter[vcf_by_filter['INFO'].str.contains('AF=')]
+    vcf_by_format = vcf_by_info[vcf_by_info["FORMAT"].str.contains('GT:')]
+    vcf_by_format = vcf_by_format[vcf_by_format["FORMAT"].str.contains('AD:')]
+    vcf_by_format = vcf_by_format[vcf_by_format["FORMAT"].str.contains('DP:')]
+
+    with open(vcf_in, 'r') as f:
+        header_lines = [l for l in f if l.startswith('##')]
+        tx = open(vcf_out, "w")
+        tx.write(''.join(header_lines))
+        tx.close()
+
+    # Write final DF to VCF in APPEND mode
+    # VCF will contain initial header as they are in original vcf file
+    vcf_by_format.to_csv(vcf_out, header=True, sep='\t', mode='a', index=False)
+
+    return vcf_by_format
+
+
+# Test teh normalization by enabling below code block
+vcf_output_df = normalize_vcf(vcf_in_path, vcf_out_path)
+print(vcf_output_df)
